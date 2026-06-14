@@ -4,6 +4,7 @@ import com.badlogic.gdx.ApplicationAdapter;
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.Input;
 import com.badlogic.gdx.graphics.OrthographicCamera;
+import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.math.MathUtils;
@@ -30,6 +31,7 @@ public class MainGame extends ApplicationAdapter {
     private OrthographicCamera uiCamera;
     private Viewport worldViewport;
     private Viewport uiViewport;
+    private Texture[] backgroundLayers;
     private Player player;
     private PlayerRenderer playerRenderer;
     private TouchControls touchControls;
@@ -38,6 +40,11 @@ public class MainGame extends ApplicationAdapter {
     public void create() {
         shapes = new ShapeRenderer();
         batch = new SpriteBatch();
+        backgroundLayers = new Texture[] {
+            loadTexture("Background/background1.png"),
+            loadTexture("Background/background2.png"),
+            loadTexture("Background/background3.png")
+        };
 
         worldCamera = new OrthographicCamera();
         worldViewport = new FitViewport(WORLD_WIDTH, WORLD_HEIGHT, worldCamera);
@@ -65,6 +72,9 @@ public class MainGame extends ApplicationAdapter {
 
     @Override
     public void dispose() {
+        for (Texture backgroundLayer : backgroundLayers) {
+            backgroundLayer.dispose();
+        }
         playerRenderer.dispose();
         batch.dispose();
         shapes.dispose();
@@ -97,6 +107,13 @@ public class MainGame extends ApplicationAdapter {
     }
 
     private void drawWorld() {
+        batch.setProjectionMatrix(worldViewport.getCamera().combined);
+        batch.begin();
+        for (Texture backgroundLayer : backgroundLayers) {
+            batch.draw(backgroundLayer, 0f, 0f, WORLD_WIDTH, WORLD_HEIGHT);
+        }
+        batch.end();
+
         shapes.setProjectionMatrix(worldViewport.getCamera().combined);
         shapes.begin(ShapeRenderer.ShapeType.Filled);
 
@@ -108,9 +125,14 @@ public class MainGame extends ApplicationAdapter {
 
         shapes.end();
 
-        batch.setProjectionMatrix(worldViewport.getCamera().combined);
         batch.begin();
         playerRenderer.draw(batch, player);
         batch.end();
+    }
+
+    private Texture loadTexture(String path) {
+        Texture texture = new Texture(Gdx.files.internal(path), true);
+        texture.setFilter(Texture.TextureFilter.MipMapLinearLinear, Texture.TextureFilter.Linear);
+        return texture;
     }
 }

@@ -11,20 +11,46 @@ import com.badlogic.gdx.utils.Array;
 import com.mycompany.platformer.entities.Player;
 
 public class PlayerRenderer {
-    private static final String IDLE_SHEET = "Player/Idle-1.png";
-    private static final int IDLE_COLUMNS = 4;
-    private static final int IDLE_ROWS = 2;
-    private static final float FRAME_DURATION = 0.18f;
-    private static final float VISUAL_HEIGHT = 132f;
+    private static final String IDLE_IMAGE_PATTERN = "Player/Idle/idle%02d.png";
+    private static final String RUN_IMAGE_PATTERN = "Player/Run/run%02d.png";
+    private static final String[] JUMP_IMAGES = {
+            "Player/Jump/jump_start01.png",
+            "Player/Jump/jump_start02.png",
+            "Player/Jump/jump_mid01.png",
+            "Player/Jump/jump_mid02.png",
+            "Player/Jump/jump_mid03.png",
+            "Player/Jump/jump_mid04.png",
+            "Player/Jump/jump_landing.png"
+    };
+    private static final int IDLE_FRAME_COUNT = 9;
+    private static final int RUN_FRAME_COUNT = 8;
+    private static final float IDLE_FRAME_DURATION = 0.12f;
+    private static final float RUN_FRAME_DURATION = 0.11f;
+    private static final float JUMP_FRAME_DURATION = 0.1f;
+    private static final float RUN_SPEED_THRESHOLD = 1f;
+    private static final float VISUAL_HEIGHT = Player.HEIGHT;
 
-    private final Texture idleTexture;
+    private final Array<Texture> textures = new Array<Texture>(IDLE_FRAME_COUNT + RUN_FRAME_COUNT + JUMP_IMAGES.length);
     private final Animation<PlayerFrame> idleAnimation;
+    private final Animation<PlayerFrame> runAnimation;
+    private final Animation<PlayerFrame> jumpAnimation;
     private float stateTime;
+    private PlayerState currentState = PlayerState.IDLE;
+    private boolean facingLeft;
 
     public PlayerRenderer() {
-        idleTexture = new Texture(Gdx.files.internal(IDLE_SHEET));
-        idleTexture.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear);
-        idleAnimation = new Animation<PlayerFrame>(FRAME_DURATION, loadFrames(), Animation.PlayMode.LOOP_PINGPONG);
+        idleAnimation = new Animation<PlayerFrame>(
+                IDLE_FRAME_DURATION,
+                loadNumberedFrames(IDLE_IMAGE_PATTERN, IDLE_FRAME_COUNT),
+                Animation.PlayMode.LOOP);
+        runAnimation = new Animation<PlayerFrame>(
+                RUN_FRAME_DURATION,
+                loadNumberedFrames(RUN_IMAGE_PATTERN, RUN_FRAME_COUNT),
+                Animation.PlayMode.LOOP);
+        jumpAnimation = new Animation<PlayerFrame>(
+                JUMP_FRAME_DURATION,
+                loadNamedFrames(JUMP_IMAGES),
+                Animation.PlayMode.NORMAL);
     }
 
     public void update(float delta) {
@@ -33,52 +59,126 @@ public class PlayerRenderer {
 
     public void draw(SpriteBatch batch, Player player) {
         Vector2 position = player.getPosition();
-        PlayerFrame frame = idleAnimation.getKeyFrame(stateTime);
+        float horizontalVelocity = player.getHorizontalVelocity();
+        boolean running = Math.abs(horizontalVelocity) > RUN_SPEED_THRESHOLD;
+        boolean jumping = !player.isGrounded();
+        if (horizontalVelocity < -RUN_SPEED_THRESHOLD) {
+            facingLeft = true;
+        } else if (horizontalVelocity > RUN_SPEED_THRESHOLD) {
+            facingLeft = false;
+        }
+
+        PlayerState nextState = jumping ? PlayerState.JUMP : running ? PlayerState.RUN : PlayerState.IDLE;
+        if (nextState != currentState) {
+            currentState = nextState;
+            stateTime = 0f;
+        }
+
+        PlayerFrame frame;
+        if (currentState == PlayerState.JUMP) {
+            frame = jumpAnimation.getKeyFrame(stateTime);
+        } else if (currentState == PlayerState.RUN) {
+            frame = runAnimation.getKeyFrame(stateTime);
+        } else {
+            frame = idleAnimation.getKeyFrame(stateTime);
+        }
         float scale = VISUAL_HEIGHT / frame.sourceHeight;
         float drawWidth = frame.region.getRegionWidth() * scale;
         float drawHeight = frame.region.getRegionHeight() * scale;
         float playerCenterX = position.x + Player.WIDTH * 0.5f;
-        float drawX = playerCenterX - frame.footAnchorFromRegionLeft * scale;
+        float footAnchor = facingLeft
+                ? frame.region.getRegionWidth() - frame.footAnchorFromRegionLeft
+                : frame.footAnchorFromRegionLeft;
+        float drawX = playerCenterX - footAnchor * scale;
         float drawY = position.y - frame.footPadding * scale;
 
-        batch.draw(frame.region, drawX, drawY, drawWidth, drawHeight);
+        if (facingLeft) {
+            batch.draw(frame.region, drawX + drawWidth, drawY, -drawWidth, drawHeight);
+        } else {
+            batch.draw(frame.region, drawX, drawY, drawWidth, drawHeight);
+        }
     }
 
     public void dispose() {
-        idleTexture.dispose();
+        for (Texture texture : textures) {
+            texture.dispose();
+        }
     }
 
-    private Array<PlayerFrame> loadFrames() {
-        Pixmap pixmap = new Pixmap(Gdx.files.internal(IDLE_SHEET));
-        int frameWidth = pixmap.getWidth() / IDLE_COLUMNS;
-        int frameHeight = pixmap.getHeight() / IDLE_ROWS;
-        Array<PlayerFrame> frames = new Array<PlayerFrame>(IDLE_COLUMNS * IDLE_ROWS);
+    private Array<PlayerFrame> loadNumberedFrames(String pattern, int frameCount) {
+        Array<PlayerFrame> frames = new Array<PlayerFrame>(frameCount);
+        for (int frameNumber = 1; frameNumber <= frameCount; frameNumber++) {
+            frames.add(loadFrame(String.format(pattern, frameNumber)));
+        }
 
-        for (int row = 0; row < IDLE_ROWS; row++) {
-            for (int column = 0; column < IDLE_COLUMNS; column++) {
-                TextureRegion region = new TextureRegion(
-                    idleTexture,
-                    column * frameWidth,
-                    row * frameHeight,
-                    frameWidth,
-                    frameHeight
-                );
-                frames.add(new PlayerFrame(
-                    region,
-                    frameHeight,
-                    findFootAnchorX(pixmap, column * frameWidth, row * frameHeight, frameWidth, frameHeight),
-                    findFootPadding(pixmap, column * frameWidth, row * frameHeight, frameWidth, frameHeight)
-                ));
+        return frames;
+    }
+
+    private Array<PlayerFrame> loadNamedFrames(String[] paths) {
+        Array<PlayerFrame> frames = new Array<PlayerFrame>(paths.length);
+        for (String path : paths) {
+            frames.add(loadFrame(path));
+        }
+
+        return frames;
+    }
+
+    private PlayerFrame loadFrame(String path) {
+        Texture texture = loadTexture(path);
+        textures.add(texture);
+        return loadFrame(path, texture);
+    }
+
+    private Texture loadTexture(String path) {
+        Texture texture = new Texture(Gdx.files.internal(path), true);
+        texture.setFilter(Texture.TextureFilter.MipMapLinearLinear, Texture.TextureFilter.Linear);
+        return texture;
+    }
+
+    private PlayerFrame loadFrame(String path, Texture texture) {
+        Pixmap pixmap = new Pixmap(Gdx.files.internal(path));
+        int[] bounds = findVisibleBounds(pixmap);
+        int x = bounds[0];
+        int y = bounds[1];
+        int width = bounds[2];
+        int height = bounds[3];
+        PlayerFrame frame = new PlayerFrame(
+                new TextureRegion(texture, x, y, width, height),
+                height,
+                findFootAnchorX(pixmap, x, y, width, height),
+                findFootPadding(pixmap, x, y, width, height));
+        pixmap.dispose();
+        return frame;
+    }
+
+    private int[] findVisibleBounds(Pixmap pixmap) {
+        int minX = pixmap.getWidth();
+        int minY = pixmap.getHeight();
+        int maxX = -1;
+        int maxY = -1;
+
+        for (int y = 0; y < pixmap.getHeight(); y++) {
+            for (int x = 0; x < pixmap.getWidth(); x++) {
+                int alpha = pixmap.getPixel(x, y) & 0xff;
+                if (alpha > 8) {
+                    minX = Math.min(minX, x);
+                    minY = Math.min(minY, y);
+                    maxX = Math.max(maxX, x);
+                    maxY = Math.max(maxY, y);
+                }
             }
         }
 
-        pixmap.dispose();
-        return frames;
+        if (maxX < minX || maxY < minY) {
+            return new int[] { 0, 0, pixmap.getWidth(), pixmap.getHeight() };
+        }
+
+        return new int[] { minX, minY, maxX - minX + 1, maxY - minY + 1 };
     }
 
     private float findFootAnchorX(Pixmap pixmap, int startX, int startY, int width, int height) {
         int bottomY = findBottomY(pixmap, startX, startY, width, height);
-        int topY = Math.max(0, bottomY - Math.max(8, (int)(height * 0.12f)));
+        int topY = Math.max(0, bottomY - Math.max(8, (int) (height * 0.12f)));
         int footMinX = width;
         int footMaxX = -1;
 
@@ -122,11 +222,18 @@ public class PlayerRenderer {
         private final float footAnchorFromRegionLeft;
         private final float footPadding;
 
-        private PlayerFrame(TextureRegion region, float sourceHeight, float footAnchorFromRegionLeft, float footPadding) {
+        private PlayerFrame(TextureRegion region, float sourceHeight, float footAnchorFromRegionLeft,
+                float footPadding) {
             this.region = region;
             this.sourceHeight = sourceHeight;
             this.footAnchorFromRegionLeft = footAnchorFromRegionLeft;
             this.footPadding = footPadding;
         }
+    }
+
+    private enum PlayerState {
+        IDLE,
+        RUN,
+        JUMP
     }
 }
