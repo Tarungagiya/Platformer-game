@@ -1,239 +1,110 @@
 package com.mycompany.platformer.graphics;
 
-import com.badlogic.gdx.Gdx;
-import com.badlogic.gdx.graphics.Pixmap;
-import com.badlogic.gdx.graphics.Texture;
-import com.badlogic.gdx.graphics.g2d.Animation;
-import com.badlogic.gdx.graphics.g2d.SpriteBatch;
-import com.badlogic.gdx.graphics.g2d.TextureRegion;
+import com.badlogic.gdx.graphics.Color;
+import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
+import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.math.Vector2;
-import com.badlogic.gdx.utils.Array;
 import com.mycompany.platformer.entities.Player;
 
 public class PlayerRenderer {
-    private static final String IDLE_IMAGE_PATTERN = "Player/Idle/idle%02d.png";
-    private static final String RUN_IMAGE_PATTERN = "Player/Run/run%02d.png";
-    private static final String[] JUMP_IMAGES = {
-            "Player/Jump/jump_start01.png",
-            "Player/Jump/jump_start02.png",
-            "Player/Jump/jump_mid01.png",
-            "Player/Jump/jump_mid02.png",
-            "Player/Jump/jump_mid03.png",
-            "Player/Jump/jump_mid04.png",
-            "Player/Jump/jump_landing.png"
-    };
-    private static final int IDLE_FRAME_COUNT = 9;
-    private static final int RUN_FRAME_COUNT = 8;
-    private static final float IDLE_FRAME_DURATION = 0.12f;
-    private static final float RUN_FRAME_DURATION = 0.11f;
-    private static final float JUMP_FRAME_DURATION = 0.1f;
-    private static final float RUN_SPEED_THRESHOLD = 1f;
-    private static final float VISUAL_HEIGHT = Player.HEIGHT;
-
-    private final Array<Texture> textures = new Array<Texture>(IDLE_FRAME_COUNT + RUN_FRAME_COUNT + JUMP_IMAGES.length);
-    private final Animation<PlayerFrame> idleAnimation;
-    private final Animation<PlayerFrame> runAnimation;
-    private final Animation<PlayerFrame> jumpAnimation;
-    private float stateTime;
-    private PlayerState currentState = PlayerState.IDLE;
-    private boolean facingLeft;
-
-    public PlayerRenderer() {
-        idleAnimation = new Animation<PlayerFrame>(
-                IDLE_FRAME_DURATION,
-                loadNumberedFrames(IDLE_IMAGE_PATTERN, IDLE_FRAME_COUNT),
-                Animation.PlayMode.LOOP);
-        runAnimation = new Animation<PlayerFrame>(
-                RUN_FRAME_DURATION,
-                loadNumberedFrames(RUN_IMAGE_PATTERN, RUN_FRAME_COUNT),
-                Animation.PlayMode.LOOP);
-        jumpAnimation = new Animation<PlayerFrame>(
-                JUMP_FRAME_DURATION,
-                loadNamedFrames(JUMP_IMAGES),
-                Animation.PlayMode.NORMAL);
-    }
+    private static final Color BODY = new Color(0.77f, 0.86f, 0.92f, 1f);
+    private static final Color SHADOW = new Color(0.02f, 0.03f, 0.05f, 1f);
+    private static final Color VISOR = new Color(0.21f, 0.95f, 1f, 1f);
 
     public void update(float delta) {
-        stateTime += delta;
     }
 
-    public void draw(SpriteBatch batch, Player player) {
+    public void draw(ShapeRenderer shapes, Player player, Color gravityColor) {
         Vector2 position = player.getPosition();
-        float horizontalVelocity = player.getHorizontalVelocity();
-        boolean running = Math.abs(horizontalVelocity) > RUN_SPEED_THRESHOLD;
-        boolean jumping = !player.isGrounded();
-        if (horizontalVelocity < -RUN_SPEED_THRESHOLD) {
-            facingLeft = true;
-        } else if (horizontalVelocity > RUN_SPEED_THRESHOLD) {
-            facingLeft = false;
-        }
+        Vector2 gravity = player.getGravityVector();
+        Vector2 up = gravity.isZero(0.001f) ? new Vector2(0f, 1f) : new Vector2(gravity).scl(-1f).nor();
+        Vector2 right = new Vector2(up.y, -up.x).nor();
+        float cx = position.x + Player.WIDTH * 0.5f;
+        float cy = position.y + Player.HEIGHT * 0.5f;
+        float bob = MathUtils.sin(player.getAnimationTimer() * 7f) * (player.isGrounded() ? 1.5f : 0.4f);
+        Vector2 center = new Vector2(cx, cy).mulAdd(up, bob);
 
-        PlayerState nextState = jumping ? PlayerState.JUMP : running ? PlayerState.RUN : PlayerState.IDLE;
-        if (nextState != currentState) {
-            currentState = nextState;
-            stateTime = 0f;
-        }
-
-        PlayerFrame frame;
-        if (currentState == PlayerState.JUMP) {
-            frame = jumpAnimation.getKeyFrame(stateTime);
-        } else if (currentState == PlayerState.RUN) {
-            frame = runAnimation.getKeyFrame(stateTime);
-        } else {
-            frame = idleAnimation.getKeyFrame(stateTime);
-        }
-        float scale = VISUAL_HEIGHT / frame.sourceHeight;
-        float drawWidth = frame.region.getRegionWidth() * scale;
-        float drawHeight = frame.region.getRegionHeight() * scale;
-        float playerCenterX = position.x + Player.WIDTH * 0.5f;
-        float footAnchor = facingLeft
-                ? frame.region.getRegionWidth() - frame.footAnchorFromRegionLeft
-                : frame.footAnchorFromRegionLeft;
-        float drawX = playerCenterX - footAnchor * scale;
-        float drawY = position.y - frame.footPadding * scale;
-
-        if (facingLeft) {
-            batch.draw(frame.region, drawX + drawWidth, drawY, -drawWidth, drawHeight);
-        } else {
-            batch.draw(frame.region, drawX, drawY, drawWidth, drawHeight);
-        }
+        drawGlow(shapes, center, gravity, gravityColor);
+        drawLimbs(shapes, center, right, up, player, gravityColor);
+        drawBody(shapes, center, right, up, gravityColor);
+        drawGravityArrow(shapes, center, gravity, gravityColor);
     }
 
     public void dispose() {
-        for (Texture texture : textures) {
-            texture.dispose();
+    }
+
+    private void drawGlow(ShapeRenderer shapes, Vector2 center, Vector2 gravity, Color gravityColor) {
+        shapes.setColor(gravityColor.r, gravityColor.g, gravityColor.b, 0.18f);
+        shapes.circle(center.x - gravity.x * 22f, center.y - gravity.y * 22f, 24f);
+        shapes.setColor(gravityColor.r, gravityColor.g, gravityColor.b, 0.10f);
+        shapes.circle(center.x - gravity.x * 38f, center.y - gravity.y * 38f, 14f);
+    }
+
+    private void drawBody(ShapeRenderer shapes, Vector2 center, Vector2 right, Vector2 up, Color gravityColor) {
+        Vector2 hip = local(center, right, up, 0f, -11f);
+        Vector2 chest = local(center, right, up, 0f, 9f);
+        Vector2 head = local(center, right, up, 0f, 23f);
+
+        shapes.setColor(SHADOW);
+        shapes.rectLine(hip.x + 2f, hip.y - 2f, chest.x + 2f, chest.y - 2f, 16f);
+        shapes.setColor(BODY);
+        shapes.rectLine(hip.x, hip.y, chest.x, chest.y, 14f);
+
+        shapes.setColor(gravityColor);
+        shapes.rectLine(local(center, right, up, -7f, 2f), local(center, right, up, 7f, 2f), 4f);
+        shapes.rectLine(local(center, right, up, -5f, -8f), local(center, right, up, 5f, -8f), 3f);
+
+        shapes.setColor(SHADOW);
+        shapes.circle(head.x + 2f, head.y - 2f, 13f);
+        shapes.setColor(BODY);
+        shapes.circle(head.x, head.y, 12f);
+        Vector2 visorA = local(center, right, up, -8f, 23f);
+        Vector2 visorB = local(center, right, up, 8f, 23f);
+        shapes.setColor(VISOR);
+        shapes.rectLine(visorA.x, visorA.y, visorB.x, visorB.y, 5f);
+    }
+
+    private void drawLimbs(ShapeRenderer shapes, Vector2 center, Vector2 right, Vector2 up, Player player, Color gravityColor) {
+        float stride = MathUtils.sin(player.getAnimationTimer() * 12f) * (player.getState() == Player.State.RUN ? 7f : 2f);
+        if (!player.isGrounded()) {
+            stride = player.getState() == Player.State.GROUND_POUND ? -9f : 5f;
         }
+        Vector2 leftHand = local(center, right, up, -16f, 0f + stride);
+        Vector2 rightHand = local(center, right, up, 16f, 0f - stride);
+        Vector2 leftFoot = local(center, right, up, -10f, -28f - stride);
+        Vector2 rightFoot = local(center, right, up, 10f, -28f + stride);
+        Vector2 leftShoulder = local(center, right, up, -8f, 7f);
+        Vector2 rightShoulder = local(center, right, up, 8f, 7f);
+        Vector2 leftHip = local(center, right, up, -6f, -12f);
+        Vector2 rightHip = local(center, right, up, 6f, -12f);
+
+        shapes.setColor(0.48f, 0.58f, 0.66f, 1f);
+        shapes.rectLine(leftShoulder.x, leftShoulder.y, leftHand.x, leftHand.y, 5f);
+        shapes.rectLine(rightShoulder.x, rightShoulder.y, rightHand.x, rightHand.y, 5f);
+        shapes.rectLine(leftHip.x, leftHip.y, leftFoot.x, leftFoot.y, 6f);
+        shapes.rectLine(rightHip.x, rightHip.y, rightFoot.x, rightFoot.y, 6f);
+        shapes.setColor(gravityColor);
+        shapes.circle(leftFoot.x, leftFoot.y, 3f);
+        shapes.circle(rightFoot.x, rightFoot.y, 3f);
     }
 
-    private Array<PlayerFrame> loadNumberedFrames(String pattern, int frameCount) {
-        Array<PlayerFrame> frames = new Array<PlayerFrame>(frameCount);
-        for (int frameNumber = 1; frameNumber <= frameCount; frameNumber++) {
-            frames.add(loadFrame(String.format(pattern, frameNumber)));
+    private void drawGravityArrow(ShapeRenderer shapes, Vector2 center, Vector2 gravity, Color color) {
+        if (gravity.isZero(0.001f)) {
+            shapes.setColor(color);
+            shapes.circle(center.x, center.y - 38f, 5f);
+            return;
         }
-
-        return frames;
+        Vector2 start = new Vector2(center).mulAdd(gravity, -36f);
+        Vector2 end = new Vector2(center).mulAdd(gravity, -68f);
+        Vector2 side = new Vector2(-gravity.y, gravity.x).scl(7f);
+        shapes.setColor(color);
+        shapes.rectLine(start.x, start.y, end.x, end.y, 4f);
+        shapes.triangle(end.x, end.y, end.x - gravity.x * 13f + side.x, end.y - gravity.y * 13f + side.y,
+                end.x - gravity.x * 13f - side.x, end.y - gravity.y * 13f - side.y);
     }
 
-    private Array<PlayerFrame> loadNamedFrames(String[] paths) {
-        Array<PlayerFrame> frames = new Array<PlayerFrame>(paths.length);
-        for (String path : paths) {
-            frames.add(loadFrame(path));
-        }
-
-        return frames;
+    private Vector2 local(Vector2 center, Vector2 right, Vector2 up, float x, float y) {
+        return new Vector2(center).mulAdd(right, x).mulAdd(up, y);
     }
 
-    private PlayerFrame loadFrame(String path) {
-        Texture texture = loadTexture(path);
-        textures.add(texture);
-        return loadFrame(path, texture);
-    }
-
-    private Texture loadTexture(String path) {
-        Texture texture = new Texture(Gdx.files.internal(path), true);
-        texture.setFilter(Texture.TextureFilter.MipMapLinearLinear, Texture.TextureFilter.Linear);
-        return texture;
-    }
-
-    private PlayerFrame loadFrame(String path, Texture texture) {
-        Pixmap pixmap = new Pixmap(Gdx.files.internal(path));
-        int[] bounds = findVisibleBounds(pixmap);
-        int x = bounds[0];
-        int y = bounds[1];
-        int width = bounds[2];
-        int height = bounds[3];
-        PlayerFrame frame = new PlayerFrame(
-                new TextureRegion(texture, x, y, width, height),
-                height,
-                findFootAnchorX(pixmap, x, y, width, height),
-                findFootPadding(pixmap, x, y, width, height));
-        pixmap.dispose();
-        return frame;
-    }
-
-    private int[] findVisibleBounds(Pixmap pixmap) {
-        int minX = pixmap.getWidth();
-        int minY = pixmap.getHeight();
-        int maxX = -1;
-        int maxY = -1;
-
-        for (int y = 0; y < pixmap.getHeight(); y++) {
-            for (int x = 0; x < pixmap.getWidth(); x++) {
-                int alpha = pixmap.getPixel(x, y) & 0xff;
-                if (alpha > 8) {
-                    minX = Math.min(minX, x);
-                    minY = Math.min(minY, y);
-                    maxX = Math.max(maxX, x);
-                    maxY = Math.max(maxY, y);
-                }
-            }
-        }
-
-        if (maxX < minX || maxY < minY) {
-            return new int[] { 0, 0, pixmap.getWidth(), pixmap.getHeight() };
-        }
-
-        return new int[] { minX, minY, maxX - minX + 1, maxY - minY + 1 };
-    }
-
-    private float findFootAnchorX(Pixmap pixmap, int startX, int startY, int width, int height) {
-        int bottomY = findBottomY(pixmap, startX, startY, width, height);
-        int topY = Math.max(0, bottomY - Math.max(8, (int) (height * 0.12f)));
-        int footMinX = width;
-        int footMaxX = -1;
-
-        for (int y = topY; y <= bottomY; y++) {
-            for (int x = 0; x < width; x++) {
-                int alpha = pixmap.getPixel(startX + x, startY + y) & 0xff;
-                if (alpha > 32) {
-                    footMinX = Math.min(footMinX, x);
-                    footMaxX = Math.max(footMaxX, x);
-                }
-            }
-        }
-
-        if (footMaxX < footMinX) {
-            return width * 0.5f;
-        }
-
-        return (footMinX + footMaxX) * 0.5f;
-    }
-
-    private float findFootPadding(Pixmap pixmap, int startX, int startY, int width, int height) {
-        return height - findBottomY(pixmap, startX, startY, width, height) - 1f;
-    }
-
-    private int findBottomY(Pixmap pixmap, int startX, int startY, int width, int height) {
-        for (int y = height - 1; y >= 0; y--) {
-            for (int x = 0; x < width; x++) {
-                int alpha = pixmap.getPixel(startX + x, startY + y) & 0xff;
-                if (alpha > 8) {
-                    return y;
-                }
-            }
-        }
-
-        return height - 1;
-    }
-
-    private static class PlayerFrame {
-        private final TextureRegion region;
-        private final float sourceHeight;
-        private final float footAnchorFromRegionLeft;
-        private final float footPadding;
-
-        private PlayerFrame(TextureRegion region, float sourceHeight, float footAnchorFromRegionLeft,
-                float footPadding) {
-            this.region = region;
-            this.sourceHeight = sourceHeight;
-            this.footAnchorFromRegionLeft = footAnchorFromRegionLeft;
-            this.footPadding = footPadding;
-        }
-    }
-
-    private enum PlayerState {
-        IDLE,
-        RUN,
-        JUMP
-    }
 }
